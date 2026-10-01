@@ -1,0 +1,131 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>F1 HUB - unofficial fan hub</title>
+<style>
+:root{--bg:#0d0d10;--card:#17171c;--line:#2a2a33;--red:#e10600;--ink:#f0f0f2;--mute:#9a9aa6}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.5 system-ui,-apple-system,Segoe UI,Roboto,sans-serif}
+header{border-bottom:3px solid var(--red);padding:12px 18px;display:flex;align-items:baseline;gap:12px;flex-wrap:wrap}
+h1{margin:0;font-size:22px}h1 b{color:var(--red)}header small{color:var(--mute)}
+nav{display:flex;gap:4px;overflow-x:auto;padding:8px 14px;border-bottom:1px solid var(--line);position:sticky;top:0;background:var(--bg);z-index:5}
+nav button{background:none;border:0;color:var(--mute);padding:8px 12px;border-radius:6px;font:inherit;cursor:pointer;white-space:nowrap}
+nav button.on{background:var(--red);color:#fff}
+main{max-width:1100px;margin:0 auto;padding:14px;display:grid;grid-template-columns:repeat(auto-fit,minmax(320px,1fr));gap:14px}
+.card{background:var(--card);border:1px solid var(--line);border-radius:8px;padding:14px 16px;overflow-x:auto}.wide{grid-column:1/-1}
+h2{margin:0 0 8px;font-size:13px;letter-spacing:.12em;text-transform:uppercase;color:var(--mute)}
+table{width:100%;border-collapse:collapse;font-size:14px}td,th{padding:5px 6px;border-bottom:1px solid var(--line);text-align:left}th{color:var(--mute);font-weight:500}
+.n{text-align:right;font-variant-numeric:tabular-nums}.big{font-size:21px;font-weight:700}.mute{color:var(--mute)}
+.bar{height:6px;background:var(--red);border-radius:3px;min-width:2px}.tag{display:inline-block;font-size:11px;border:1px solid var(--line);border-radius:10px;padding:1px 8px;color:var(--mute);margin-left:6px}
+a{color:#ff6b66;text-decoration:none}a:hover{text-decoration:underline}ul{padding-left:18px;margin:0}li{margin:5px 0}
+.warn{border-left:3px solid #f5a623;padding:6px 10px;background:#241d10;color:#e8c98a;font-size:13px;margin-top:8px}
+select,input{background:#101014;color:var(--ink);border:1px solid var(--line);border-radius:6px;padding:7px 9px;font:inherit;margin:2px 4px 6px 0}
+.row{cursor:pointer}.row:hover{background:#1f1f26}.s{display:inline-block;width:10px;height:10px;border-radius:50%;margin-right:4px}
+footer{max-width:1100px;margin:0 auto;padding:10px 16px 30px;color:var(--mute);font-size:12px}
+</style></head><body>
+<header><h1>F1 <b>HUB</b></h1><small>Unofficial fan project. Not affiliated with Formula 1, the FIA or any team.</small></header>
+<nav id="nav"></nav><main id="main"></main>
+<footer>Data: Jolpica F1 API (Ergast-compatible) and OpenF1, plus BBC Sport / Motorsport.com RSS via the free rss2json converter. Loaded live in your browser, nothing stored. Predictions use past results only and can be badly wrong. Circuit/driver links go to Wikipedia.</footer>
+<script>
+const J="https://api.jolpi.ca/ergast/f1/",O="https://api.openf1.org/v1/",YR=new Date().getFullYear();
+const $=id=>document.getElementById(id),esc=s=>String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+const cache={};const get=async u=>{if(cache[u])return cache[u];const r=await fetch(u);if(!r.ok)throw Error("HTTP "+r.status);return cache[u]=await r.json()};
+const jol=async p=>(await get(J+p)).MRData;const nm=d=>d.givenName+" "+d.familyName;
+const card=(t,h,w)=>`<section class="card${w?" wide":""}"><h2>${t}</h2>${h}</section>`;
+const err=e=>`<span class="mute">Could not load (${esc(e.message)}). Try again shortly (free APIs rate-limit).</span>`;
+const tbl=(head,rows)=>`<table><tr>${head.map((h,i)=>`<th${i>1?' class="n"':""}>${h}</th>`).join("")}</tr>${rows.join("")}</table>`;
+const when=r=>new Date(r.date+"T"+(r.time||"12:00:00Z"));
+const tabs={home:"Home",live:"Live / Session",standings:"Standings",calendar:"Calendar",results:"Results archive",drivers:"Drivers",teams:"Teams",predict:"Predictions",compare:"Compare",champ:"Title simulator"};
+$("nav").innerHTML=Object.entries(tabs).map(([k,v])=>`<button data-t="${k}">${v}</button>`).join("");
+$("nav").onclick=e=>{if(e.target.dataset.t)location.hash=e.target.dataset.t};
+async function route(){const t=(location.hash||"#home").slice(1).split("/")[0];const k=tabs[t]?t:"home";
+ document.querySelectorAll("nav button").forEach(b=>b.classList.toggle("on",b.dataset.t==k));$("main").innerHTML=card("Loading","Loading...",1);
+ try{$("main").innerHTML=await views[k]()}catch(e){$("main").innerHTML=card("Error",err(e),1)}if(after[k])after[k]()}
+addEventListener("hashchange",route);
+
+async function seasonData(){const [R,S]=await Promise.all([jol(`current/results.json?limit=1000`),jol("current.json")]);return{R:R.RaceTable.Races,S:S.RaceTable.Races}}
+const views={};const after={};let timer;
+views.home=async()=>{const{R,S}=await seasonData();const n=S.find(r=>when(r)>Date.now()),l=R[R.length-1];
+ let h=n?card("Next race",`<div class="big">${esc(n.raceName)}</div><div>${esc(n.Circuit.circuitName)}, ${esc(n.Circuit.Location.locality)}, ${esc(n.Circuit.Location.country)}</div><div class="mute">Round ${n.round} - ${when(n).toLocaleString()}</div><div id="cd" class="big" style="color:var(--red)"></div><div class="mute" style="margin-top:6px">${[["FirstPractice","FP1"],["SecondPractice","FP2"],["ThirdPractice","FP3"],["SprintQualifying","Sprint Q"],["Sprint","Sprint"],["Qualifying","Quali"]].filter(x=>n[x[0]]).map(x=>`${x[1]}: ${new Date(n[x[0]].date+"T"+(n[x[0]].time||"12:00:00Z")).toLocaleString([], {weekday:"short",hour:"2-digit",minute:"2-digit"})}`).join(" - ")}</div>`):card("Next race","Season complete.");
+ h+=l?card("Last race: "+esc(l.raceName),tbl(["P","Driver","Time"],l.Results.slice(0,10).map(x=>`<tr><td>${x.position}</td><td>${esc(nm(x.Driver))}<span class="tag">${esc(x.Constructor.name)}</span></td><td class="n">${esc(x.Time?x.Time.time:x.status)}</td></tr>`))):"";
+ h+=card("Headlines",`<div id="newsbox">Loading...</div>`);views._n=n;return h}
+after.home=()=>{const n=views._n;if(n){const t=when(n);clearInterval(timer);const f=()=>{const d=t-Date.now();if($("cd"))$("cd").textContent=d<0?"Race weekend underway or finished":`${Math.floor(d/864e5)}d ${Math.floor(d/36e5)%24}h ${Math.floor(d/6e4)%60}m`};f();timer=setInterval(f,3e4)}
+ news().then(h=>{if($("newsbox"))$("newsbox").innerHTML=h})}
+async function news(){const feeds=[["https://feeds.bbci.co.uk/sport/formula1/rss.xml","BBC"],["https://www.motorsport.com/rss/f1/news/","Motorsport.com"]];
+ const rs=await Promise.allSettled(feeds.map(f=>get("https://api.rss2json.com/v1/api.json?rss_url="+encodeURIComponent(f[0]))));
+ const all=rs.flatMap((r,i)=>r.status=="fulfilled"?(r.value.items||[]).map(x=>({...x,src:feeds[i][1]})):[]).sort((a,b)=>new Date(b.pubDate)-new Date(a.pubDate));
+ return all.length?`<ul>${all.slice(0,14).map(x=>`<li><a href="${esc(x.link)}" target="_blank" rel="noopener">${esc(x.title)}</a> <span class="mute">${esc(x.src)}</span></li>`).join("")}</ul>`:err(Error("no feed"))}
+
+views.live=async()=>{const [s]=await get(O+"sessions?session_key=latest");const k=s.session_key;
+ const [pos,drv,st,wx,rc,iv]=await Promise.allSettled([get(O+"position?session_key="+k),get(O+"drivers?session_key="+k),get(O+"stints?session_key="+k),get(O+"weather?session_key="+k),get(O+"race_control?session_key="+k),get(O+"intervals?session_key="+k)]);
+ const ok=x=>x.status=="fulfilled"&&Array.isArray(x.value)?x.value:[];const d={};ok(drv).forEach(x=>d[x.driver_number]=x);
+ const last={};ok(pos).forEach(p=>last[p.driver_number]=p);const iv2={};ok(iv).forEach(p=>iv2[p.driver_number]=p);
+ const stints={};ok(st).forEach(x=>(stints[x.driver_number]=stints[x.driver_number]||[]).push(x));
+ const col={SOFT:"#e10600",MEDIUM:"#f5c518",HARD:"#eee",INTERMEDIATE:"#3ecf8e",WET:"#3b82f6"};
+ const rows=Object.values(last).sort((a,b)=>a.position-b.position).map(r=>{const x=d[r.driver_number]||{},ss=(stints[r.driver_number]||[]).sort((a,b)=>a.stint_number-b.stint_number);
+  return `<tr><td>${r.position}</td><td><span class="s" style="background:#${esc(x.team_colour||"888")}"></span>${esc(x.full_name||"#"+r.driver_number)}</td><td>${ss.map(q=>`<span title="${esc(q.compound)} laps ${q.lap_start}-${q.lap_end}" class="s" style="background:${col[q.compound]||"#777"}"></span>`).join("")}</td><td class="n">${iv2[r.driver_number]?esc(iv2[r.driver_number].gap_to_leader??""):""}</td></tr>`});
+ const w=ok(wx).slice(-1)[0],msgs=ok(rc).slice(-12).reverse();const ended=new Date(s.date_end)<Date.now();
+ return card(`${esc(s.country_name)} - ${esc(s.session_name)}`,`<div class="mute">${ended?"Finished":"In progress"} - ${new Date(s.date_start).toLocaleString()} - positions as last reported by OpenF1. Tyre dots: red soft, yellow medium, white hard, green inter, blue wet.</div>${rows.length?tbl(["P","Driver","Tyres","Gap"],rows):"<p>No position data for this session yet.</p>"}<div class="warn">OpenF1's free tier is delayed/limited during live sessions and some feeds (laps, intervals, team radio) can be empty. If blank, nothing is faked.</div>`,1)
+ +(w?card("Weather (latest reading)",`Air ${w.air_temperature}&deg;C, track ${w.track_temperature}&deg;C, humidity ${w.humidity}%, wind ${w.wind_speed} m/s, ${w.rainfall?"RAIN":"dry"}`):"")
+ +card("Race control",msgs.length?`<ul>${msgs.map(m=>`<li><span class="mute">${new Date(m.date).toLocaleTimeString()}</span> ${esc(m.message)}</li>`).join("")}</ul>`:"No messages.")}
+
+views.standings=async()=>{const[a,b]=await Promise.all([jol("current/driverStandings.json"),jol("current/constructorStandings.json")]);const dl=a.StandingsTable.StandingsLists[0],cl=b.StandingsTable.StandingsLists[0];const mx=+dl.DriverStandings[0].points||1;
+ return card(`Drivers after round ${dl.round}`,tbl(["P","Driver","Wins","Pts"],dl.DriverStandings.map(x=>`<tr><td>${x.position}</td><td>${esc(nm(x.Driver))}<span class="tag">${esc(x.Constructors[0].name)}</span><div class="bar" style="width:${x.points/mx*100}%"></div></td><td class="n">${x.wins}</td><td class="n">${x.points}</td></tr>`)))
+ +card("Constructors",tbl(["P","Team","Wins","Pts"],cl.ConstructorStandings.map(x=>`<tr><td>${x.position}</td><td>${esc(x.Constructor.name)}</td><td class="n">${x.wins}</td><td class="n">${x.points}</td></tr>`)))}
+
+views.calendar=async()=>{const{R,S}=await seasonData();const done={};R.forEach(r=>done[r.round]=r);
+ return card(`${S[0]?.season||YR} calendar`,tbl(["Rd","Grand Prix","Date","Winner"],S.map(r=>{const w=done[r.round]?.Results[0];return `<tr><td>${r.round}</td><td><a href="${esc(r.Circuit.url)}" target="_blank" rel="noopener">${esc(r.raceName)}</a><span class="tag">${esc(r.Circuit.Location.country)}</span></td><td class="n">${r.date}</td><td class="n">${w?esc(w.Driver.familyName):'<span class="mute">-</span>'}</td></tr>`})),1)}
+
+views.results=async()=>{const sn=(await jol("seasons.json?limit=100")).SeasonTable.Seasons.map(x=>x.season).reverse();
+ return card("Results archive (1950 to now)",`<select id="ys">${sn.map(y=>`<option>${y}</option>`).join("")}</select><select id="rs"></select><select id="kind"><option value="results">Race</option><option value="qualifying">Qualifying</option><option value="sprint">Sprint</option><option value="pitstops">Pit stops</option></select><div id="rout" style="margin-top:8px"></div>`,1)}
+after.results=()=>{const ys=$("ys"),rs=$("rs"),k=$("kind");
+ const load=async()=>{try{const races=(await jol(`${ys.value}.json`)).RaceTable.Races;const cur=rs.value;rs.innerHTML=races.map(r=>`<option value="${r.round}">${r.round}. ${esc(r.raceName)}</option>`).join("");if(cur&&[...rs.options].some(o=>o.value==cur))rs.value=cur;show()}catch(e){$("rout").innerHTML=err(e)}};
+ const show=async()=>{if(!rs.value)return;$("rout").textContent="Loading...";try{const q=k.value,m=await jol(`${ys.value}/${rs.value}/${q}.json?limit=100`);const r=m.RaceTable.Races[0];if(!r){$("rout").innerHTML="<span class='mute'>No data for this session.</span>";return}
+  const H={results:["P","Driver","Team","Grid","Time/Status","Pts"],qualifying:["P","Driver","Team","Q1","Q2","Q3"],sprint:["P","Driver","Team","Grid","Time/Status","Pts"],pitstops:["Stop","Driver","Lap","Time","Duration"]}[q];
+  let rows;if(q=="results"||q=="sprint"){rows=(r.Results||r.SprintResults).map(x=>`<tr><td>${esc(x.positionText)}</td><td>${esc(nm(x.Driver))}</td><td>${esc(x.Constructor.name)}</td><td class="n">${x.grid}</td><td class="n">${esc(x.Time?x.Time.time:x.status)}</td><td class="n">${x.points}</td></tr>`)}
+  else if(q=="qualifying")rows=r.QualifyingResults.map(x=>`<tr><td>${x.position}</td><td>${esc(nm(x.Driver))}</td><td>${esc(x.Constructor.name)}</td><td class="n">${esc(x.Q1||"")}</td><td class="n">${esc(x.Q2||"")}</td><td class="n">${esc(x.Q3||"")}</td></tr>`);
+  else rows=r.PitStops.map(x=>`<tr><td>${x.stop}</td><td>${esc(x.driverId)}</td><td class="n">${x.lap}</td><td class="n">${x.time}</td><td class="n">${esc(x.duration)}</td></tr>`);
+  $("rout").innerHTML=`<div class="big">${esc(r.raceName)} ${r.season}</div><div class="mute">${esc(r.Circuit.circuitName)} - ${r.date}</div>`+(q=="pitstops"?tbl(H.slice(0,5).map((h,i)=>h),rows):tbl(H,rows))}catch(e){$("rout").innerHTML=err(e)}};
+ ys.onchange=load;rs.onchange=show;k.onchange=show;load()}
+
+views.drivers=async()=>{const[s,st]=await Promise.all([jol("current/drivers.json"),jol("current/driverStandings.json")]);const pts={};st.StandingsTable.StandingsLists[0].DriverStandings.forEach(x=>pts[x.Driver.driverId]=x);
+ return card("Current drivers (click for career)",tbl(["#","Driver","Nation","Pts"],s.DriverTable.Drivers.map(d=>`<tr class="row" data-d="${esc(d.driverId)}"><td>${esc(d.permanentNumber||"")}</td><td>${esc(nm(d))}<span class="tag">${esc(pts[d.driverId]?.Constructors[0].name||"")}</span></td><td class="n">${esc(d.nationality)}</td><td class="n">${pts[d.driverId]?.points??0}</td></tr>`)),1)+`<div id="dp" class="wide"></div>`}
+after.drivers=()=>{document.querySelectorAll("tr[data-d]").forEach(tr=>tr.onclick=async()=>{const id=tr.dataset.d;$("dp").innerHTML=card("Loading","...",1);try{
+ const[all,w,p,t]=await Promise.all([jol(`drivers/${id}.json`),jol(`drivers/${id}/results/1.json?limit=1`),jol(`drivers/${id}/qualifying/1.json?limit=1`),jol(`drivers/${id}/driverStandings/1.json?limit=100`)]);const d=all.DriverTable.Drivers[0];
+ const titles=t.StandingsTable.StandingsLists.length;const poles=p.total,wins=w.total;const races=(await jol(`drivers/${id}/results.json?limit=1`)).total;
+ $("dp").innerHTML=card(esc(nm(d)),`<div>#${esc(d.permanentNumber||"-")} ${esc(d.code||"")} - ${esc(d.nationality)} - born ${esc(d.dateOfBirth)} - <a href="${esc(d.url)}" target="_blank" rel="noopener">Wikipedia</a></div><div class="big" style="margin-top:6px">${races} races - ${wins} wins - ${poles} poles - ${titles} titles</div>`,1)}catch(e){$("dp").innerHTML=card("Error",err(e),1)}})}
+
+views.teams=async()=>{const[s,st]=await Promise.all([jol("current/constructors.json"),jol("current/constructorStandings.json")]);const pts={};st.StandingsTable.StandingsLists[0].ConstructorStandings.forEach(x=>pts[x.Constructor.constructorId]=x);
+ const dr=(await jol("current/driverStandings.json")).StandingsTable.StandingsLists[0].DriverStandings;const by={};dr.forEach(x=>(by[x.Constructors[0].constructorId]=by[x.Constructors[0].constructorId]||[]).push(x.Driver.familyName));
+ return card("Teams",tbl(["Team","Drivers","Wins","Pts"],s.ConstructorTable.Constructors.map(c=>`<tr><td><a href="${esc(c.url)}" target="_blank" rel="noopener">${esc(c.name)}</a><span class="tag">${esc(c.nationality)}</span></td><td>${esc((by[c.constructorId]||[]).join(", "))}</td><td class="n">${pts[c.constructorId]?.wins??0}</td><td class="n">${pts[c.constructorId]?.points??0}</td></tr>`)),1)}
+
+// ---- prediction model: recency-weighted points + season points/race + team points/race ----
+function score(R,upto,decay=.75){const dp={},tp={},nm2={},dt={};R.slice(0,upto).forEach(r=>r.Results.forEach(x=>{const id=x.Driver.driverId;(dp[id]=dp[id]||[]).push(+x.points);const c=x.Constructor.constructorId;(tp[c]=tp[c]||[]).push(+x.points);nm2[id]=nm(x.Driver);dt[id]=c}));
+ const o={};for(const id in dp){const a=dp[id];let w=0,s=0;a.slice().reverse().forEach((p,i)=>{const k=Math.pow(decay,i);w+=k;s+=k*p});const t=tp[dt[id]];o[id]={name:nm2[id],s:.5*s/w+.3*a.reduce((x,y)=>x+y,0)/a.length+.2*t.reduce((x,y)=>x+y,0)/t.length/2}}return o}
+const softmax=(o,T=4)=>{const ids=Object.keys(o),m=Math.max(...ids.map(i=>o[i].s)),e=ids.map(i=>Math.exp((o[i].s-m)/T)),z=e.reduce((a,b)=>a+b,0);ids.forEach((i,k)=>o[i].p=e[k]/z);return ids.sort((a,b)=>o[b].p-o[a].p)};
+views.predict=async()=>{const{R,S}=await seasonData();if(R.length<4)return card("Predictions","Not enough races yet this season.",1);
+ const o=score(R,R.length),ids=softmax(o);let n=0,t1=0,t3=0,mae=0;
+ for(let k=3;k<R.length;k++){const b=score(R,k),bi=softmax(b),res=R[k].Results,win=res[0].Driver.driverId;n++;if(bi[0]==win)t1++;if(bi.slice(0,3).includes(win))t3++}
+ let pod=0,pn=0;for(let k=3;k<R.length;k++){const b=score(R,k),bi=softmax(b).slice(0,3),act=R[k].Results.slice(0,3).map(x=>x.Driver.driverId);pn++;pod+=bi.filter(i=>act.includes(i)).length}
+ const nx=S.find(r=>when(r)>Date.now());
+ return card(`Winner probabilities${nx?" - "+esc(nx.raceName):""}`,tbl(["Driver","","%"],ids.slice(0,10).map(i=>`<tr><td>${esc(o[i].name)}</td><td style="width:50%"><div class="bar" style="width:${Math.min(100,o[i].p*200)}%"></div></td><td class="n">${(o[i].p*100).toFixed(0)}%</td></tr>`)),1)
+ +card("Predicted podium",`<ol>${ids.slice(0,3).map(i=>`<li>${esc(o[i].name)}</li>`).join("")}</ol>`)
+ +card("Backtest on this season",`<div class="big">${t1}/${n} winners (${(t1/n*100).toFixed(0)}%)</div><div>Winner within top-3 picks: ${t3}/${n} (${(t3/n*100).toFixed(0)}%).<br>Podium drivers hit: ${pod} of ${pn*3} (${(pod/pn/3*100).toFixed(0)}%).</div><div class="warn">Only uses prior rounds each time (no peeking). Ignores qualifying, weather, circuit, penalties, reliability. A fun baseline, not a betting tip. Model: 50% recency-weighted points + 30% season points/race + 20% team points/race, softmax temperature 4.</div>`)}
+
+views.compare=async()=>{const dl=(await jol("current/drivers.json")).DriverTable.Drivers;const opt=dl.map(d=>`<option value="${esc(d.driverId)}">${esc(nm(d))}</option>`).join("");
+ return card("Head to head (this season)",`<select id="a">${opt}</select> vs <select id="b">${opt}</select><div id="cmp" style="margin-top:8px"></div>`,1)}
+after.compare=()=>{const a=$("a"),b=$("b");b.selectedIndex=1;const go=async()=>{try{const{R}=await seasonData();const f=id=>R.map(r=>r.Results.find(x=>x.Driver.driverId==id)).filter(Boolean);const A=f(a.value),B=f(b.value);
+  const sum=x=>x.reduce((s,r)=>s+(+r.points),0),avg=x=>x.length?(x.reduce((s,r)=>s+(+r.position),0)/x.length).toFixed(1):"-";
+  let h2h=0,h2hb=0;R.forEach(r=>{const x=r.Results.find(z=>z.Driver.driverId==a.value),y=r.Results.find(z=>z.Driver.driverId==b.value);if(x&&y){+x.position<+y.position?h2h++:h2hb++}});
+  const row=(l,x,y)=>`<tr><td>${l}</td><td class="n">${x}</td><td class="n">${y}</td></tr>`;
+  $("cmp").innerHTML=tbl(["","A","B"],[row("Points",sum(A),sum(B)),row("Wins",A.filter(r=>r.position==1).length,B.filter(r=>r.position==1).length),row("Podiums",A.filter(r=>+r.position<=3).length,B.filter(r=>+r.position<=3).length),row("Avg finish",avg(A),avg(B)),row("Beat the other (races both finished classified)",h2h,h2hb)])}catch(e){$("cmp").innerHTML=err(e)}};a.onchange=b.onchange=go;go()}
+
+// Monte Carlo of remaining races, using prediction scores. Clearly a toy.
+views.champ=async()=>{const{R,S}=await seasonData();const rem=S.filter(r=>!R.some(x=>x.round==r.round)).length;
+ return card("Title simulator (toy)",`<div class="mute">${rem} races remain. Simulates them 5,000 times: each race, finishing order is drawn from the form-based scores (Plackett-Luce), with 25-18-15-12-10-8-6-4-2-1 points. Sprints, fastest lap, DNFs and upgrades are ignored.</div><button id="sim" style="margin-top:8px;padding:8px 14px;background:var(--red);color:#fff;border:0;border-radius:6px;cursor:pointer">Run simulation</button><div id="sout" style="margin-top:8px"></div>`,1)}
+after.champ=()=>$("sim").onclick=async()=>{const{R,S}=await seasonData();const rem=S.filter(r=>!R.some(x=>x.round==r.round)).length;const st=(await jol("current/driverStandings.json")).StandingsTable.StandingsLists[0].DriverStandings;
+ const o=score(R,R.length);const ids=Object.keys(o);softmax(o,4);const base={};st.forEach(x=>base[x.Driver.driverId]=+x.points);const P=[25,18,15,12,10,8,6,4,2,1],N=5000,wins={};
+ if(!rem){$("sout").textContent="No races remain.";return}
+ for(let i=0;i<N;i++){const pts={...base};for(let r=0;r<rem;r++){const left=ids.slice();for(let p=0;p<P.length&&left.length;p++){const z=left.reduce((s,j)=>s+o[j].p,0);let u=Math.random()*z,k=0;for(;k<left.length-1;k++){u-=o[left[k]].p;if(u<=0)break}const j=left.splice(k,1)[0];pts[j]=(pts[j]||0)+P[p]}}
+  const w=Object.keys(pts).sort((a,b)=>pts[b]-pts[a])[0];wins[w]=(wins[w]||0)+1}
+ const nmap={};st.forEach(x=>nmap[x.Driver.driverId]=nm(x.Driver));
+ $("sout").innerHTML=tbl(["Driver","","Title chance"],Object.keys(wins).sort((a,b)=>wins[b]-wins[a]).slice(0,8).map(i=>`<tr><td>${esc(nmap[i]||i)}</td><td style="width:50%"><div class="bar" style="width:${wins[i]/N*100}%"></div></td><td class="n">${(wins[i]/N*100).toFixed(1)}%</td></tr>`))}
+route();
+</script></body></html>
