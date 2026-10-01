@@ -18,6 +18,7 @@ a{color:#ff6b66;text-decoration:none}a:hover{text-decoration:underline}ul{paddin
 .warn{border-left:3px solid #f5a623;padding:6px 10px;background:#241d10;color:#e8c98a;font-size:13px;margin-top:8px}
 select,input{background:#101014;color:var(--ink);border:1px solid var(--line);border-radius:6px;padding:7px 9px;font:inherit;margin:2px 4px 6px 0}
 .row{cursor:pointer}.row:hover{background:#1f1f26}.s{display:inline-block;width:10px;height:10px;border-radius:50%;margin-right:4px}
+@media(max-width:600px){main{padding:10px;gap:10px}.card{padding:12px}td,th{padding:5px 4px;font-size:13px}.big{font-size:18px}h1{font-size:20px}header{padding:10px 14px}nav button{padding:8px 10px}select,input{width:100%}}
 footer{max-width:1100px;margin:0 auto;padding:10px 16px 30px;color:var(--mute);font-size:12px}
 </style></head><body>
 <header><h1>F1 <b>HUB</b></h1><small>Unofficial fan project. Not affiliated with Formula 1, the FIA or any team.</small></header>
@@ -36,7 +37,7 @@ const tabs={home:"Home",live:"Live / Session",standings:"Standings",calendar:"Ca
 $("nav").innerHTML=Object.entries(tabs).map(([k,v])=>`<button data-t="${k}">${v}</button>`).join("");
 $("nav").onclick=e=>{if(e.target.dataset.t)location.hash=e.target.dataset.t};
 async function route(){const t=(location.hash||"#home").slice(1).split("/")[0];const k=tabs[t]?t:"home";
- document.querySelectorAll("nav button").forEach(b=>b.classList.toggle("on",b.dataset.t==k));$("main").innerHTML=card("Loading","Loading...",1);
+ document.querySelectorAll("nav button").forEach(b=>{b.classList.toggle("on",b.dataset.t==k);if(b.dataset.t==k)b.scrollIntoView({inline:"center",block:"nearest"})});$("main").innerHTML=card("Loading","Loading...",1);
  try{$("main").innerHTML=await views[k]()}catch(e){$("main").innerHTML=card("Error",err(e),1)}if(after[k])after[k]()}
 addEventListener("hashchange",route);
 
