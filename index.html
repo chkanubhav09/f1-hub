@@ -40,7 +40,9 @@ async function route(){const t=(location.hash||"#home").slice(1).split("/")[0];c
  try{$("main").innerHTML=await views[k]()}catch(e){$("main").innerHTML=card("Error",err(e),1)}if(after[k])after[k]()}
 addEventListener("hashchange",route);
 
-async function seasonData(){const [R,S]=await Promise.all([jol(`current/results.json?limit=1000`),jol("current.json")]);return{R:R.RaceTable.Races,S:S.RaceTable.Races}}
+async function allResults(){const first=await jol("current/results.json?limit=100"),tot=+first.total,m={};const add=d=>d.RaceTable.Races.forEach(r=>{if(m[r.round])m[r.round].Results.push(...r.Results);else m[r.round]=r});add(first);
+ for(let o=100;o<tot;o+=100)add(await jol(`current/results.json?limit=100&offset=${o}`));return Object.values(m).sort((a,b)=>a.round-b.round)}
+async function seasonData(){if(cache._sd)return cache._sd;const [R,S]=await Promise.all([allResults(),jol("current.json")]);return cache._sd={R,S:S.RaceTable.Races}}
 const views={};const after={};let timer;
 views.home=async()=>{const{R,S}=await seasonData();const n=S.find(r=>when(r)>Date.now()),l=R[R.length-1];
  let h=n?card("Next race",`<div class="big">${esc(n.raceName)}</div><div>${esc(n.Circuit.circuitName)}, ${esc(n.Circuit.Location.locality)}, ${esc(n.Circuit.Location.country)}</div><div class="mute">Round ${n.round} - ${when(n).toLocaleString()}</div><div id="cd" class="big" style="color:var(--red)"></div><div class="mute" style="margin-top:6px">${[["FirstPractice","FP1"],["SecondPractice","FP2"],["ThirdPractice","FP3"],["SprintQualifying","Sprint Q"],["Sprint","Sprint"],["Qualifying","Quali"]].filter(x=>n[x[0]]).map(x=>`${x[1]}: ${new Date(n[x[0]].date+"T"+(n[x[0]].time||"12:00:00Z")).toLocaleString([], {weekday:"short",hour:"2-digit",minute:"2-digit"})}`).join(" - ")}</div>`):card("Next race","Season complete.");
