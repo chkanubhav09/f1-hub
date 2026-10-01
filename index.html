@@ -33,7 +33,7 @@ const card=(t,h,w)=>`<section class="card${w?" wide":""}"><h2>${t}</h2>${h}</sec
 const err=e=>{const m=String(e.message||e),c=+(m.match(/HTTP (\d+)/)||[])[1];return `<span class="mute">${c==429||c>=500||/Failed to fetch|NetworkError/.test(m)?"Could not load ("+esc(m)+"). The free API is busy or unreachable; try again shortly.":"Request failed ("+esc(m)+"). That looks like a bug, not a rate limit."}</span>`};
 const tbl=(head,rows)=>`<table><tr>${head.map((h,i)=>`<th${i>1?' class="n"':""}>${h}</th>`).join("")}</tr>${rows.join("")}</table>`;
 const when=r=>new Date(r.date+"T"+(r.time||"12:00:00Z"));
-const tabs={home:"Home",live:"Live / Session",standings:"Standings",calendar:"Calendar",results:"Results archive",drivers:"Drivers",teams:"Teams",predict:"Predictions",compare:"Compare",champ:"Title simulator"};
+const tabs={home:"Home",live:"Live / Session",standings:"Standings",calendar:"Calendar",results:"Results archive",drivers:"Drivers",teams:"Teams",predict:"Predictions",compare:"Compare",champ:"Title simulator",history:"History",records:"Records",story:"Story"};
 $("nav").innerHTML=Object.entries(tabs).map(([k,v])=>`<button data-t="${k}">${v}</button>`).join("");
 $("nav").onclick=e=>{if(e.target.dataset.t)location.hash=e.target.dataset.t};
 async function route(){const t=(location.hash||"#home").slice(1).split("/")[0];const k=tabs[t]?t:"home";
@@ -130,5 +130,19 @@ after.champ=()=>$("sim").onclick=async()=>{const{R,S}=await seasonData();const r
   const w=Object.keys(pts).sort((a,b)=>pts[b]-pts[a])[0];wins[w]=(wins[w]||0)+1}
  const nmap={};st.forEach(x=>nmap[x.Driver.driverId]=nm(x.Driver));
  $("sout").innerHTML=tbl(["Driver","","Title chance"],Object.keys(wins).sort((a,b)=>wins[b]-wins[a]).slice(0,8).map(i=>`<tr><td>${esc(nmap[i]||i)}</td><td style="width:50%"><div class="bar" style="width:${wins[i]/N*100}%"></div></td><td class="n">${(wins[i]/N*100).toFixed(1)}%</td></tr>`))}
+/* ---- History / Records / Story (static JSON in this repo; numbers fetched from Jolpica at build time, story is editorial) ---- */
+views.history=async()=>{const t=await get("timeline.json");const rows=[...t].reverse();
+ const dt={};const ct={};t.forEach(r=>{dt[r.driver]=(dt[r.driver]||0)+1;if(r.constructor)ct[r.constructor]=(ct[r.constructor]||0)+1});
+ const top=o=>Object.entries(o).sort((a,b)=>b[1]-a[1]||a[0].localeCompare(b[0])).slice(0,8).map(([n,c])=>`<tr><td>${esc(n)}</td><td class="n">${c}</td></tr>`).join("");
+ return card("Champions by year, 1950-"+t[t.length-1].year,`<div class="mute">Final-standings leader each season from the Jolpica API. Constructors' championship started in 1958. Points systems changed over time, so points are not comparable across eras.</div>`+tbl(["Year","Drivers' champion","Pts","Constructors' champion","Pts"],rows.map(r=>`<tr><td>${r.year}</td><td>${esc(r.driver)}<span class="tag">${esc(r.driverTeam)}</span></td><td class="n">${r.driverPoints}</td><td>${r.constructor?esc(r.constructor):'<span class="mute">n/a</span>'}</td><td class="n">${r.constructorPoints??""}</td></tr>`)),1)
+ +card("Most drivers' titles",`<table>${top(dt)}</table>`)+card("Most constructors' titles",`<table>${top(ct)}</table>`)};
+views.records=async()=>{const R=await get("records.json");
+ const cat=(title,key,arr)=>card(title,tbl(["#","Name","Total"],[...arr].filter(x=>x[key]!=null).sort((a,b)=>b[key]-a[key]).slice(0,10).map((x,i)=>`<tr><td>${i+1}</td><td>${esc(x.name)}</td><td class="n">${x[key]}</td></tr>`)));
+ return card("All-time records",`<div class="mute">Counted from the Jolpica API on ${esc(R.asOf)} (${esc(R.scope)}). Pole positions and fastest laps are left out because the API's qualifying and fastest-lap data is incomplete before the 2000s. Counts can differ slightly from the official FIA numbers, for example around sprint races and shared drives, and only about 40 notable drivers and 16 teams were checked, so a name missing from a list is not proof it does not belong there. Alfa Romeo here means the 1950s team only.</div>`,1)
+ +cat("Most race wins","wins",R.drivers)+cat("Most podiums","podiums",R.drivers)+cat("Most drivers' titles","titles",R.drivers)+cat("Most race starts","races",R.drivers)
+ +cat("Constructors: most wins","wins",R.constructors)};
+views.story=async()=>{const S=await get("story.json");
+ return card("The story of F1",`<div class="mute">${esc(S.label)}</div>`,1)+S.eras.map(e=>card(esc(e.years)+": "+esc(e.title),`<p>${esc(e.text)}</p>`,1)).join("")+card("Legendary moments",`<ul>${S.moments.map(m=>`<li><b>${m.year}: ${esc(m.title)}.</b> ${esc(m.text)}</li>`).join("")}</ul>`,1)};
+
 route();
 </script></body></html>
