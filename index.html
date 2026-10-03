@@ -151,7 +151,13 @@ after.results=()=>{const ys=$("ys"),rs=$("rs"),k=$("kind");
  const practice=async()=>{const y=+ys.value,out=$("rout");
   if(y<2023){out.innerHTML=`<div class="warn">No practice results for ${y}. The free APIs only have practice classifications from 2023 onward (Jolpica/Ergast never published them; OpenF1 starts in 2023). Pick 2023 or later.</div>`;return}
   const rc=(await jol(`${y}/${rs.value}.json`)).RaceTable.Races[0];if(!rc){out.innerHTML="<span class='mute'>No data.</span>";return}
-  const rd=new Date(rc.date+"T12:00:00Z").getTime(),all=await get(O+"sessions?year="+y+"&session_type=Practice").catch(()=>null);
+  const rd=new Date(rc.date+"T12:00:00Z").getTime();
+  let cs=null,gen="";try{const c=await get("practice/"+y+".json");gen=c.generated||"";cs=c.sessions.filter(s=>{const d=new Date(s.ds).getTime();return d<=rd+864e5&&d>=rd-4*864e5})}catch(e){}
+  if(cs&&cs.length){let h=`<div class="big">${esc(rc.raceName)} ${rc.season}</div><div class="mute">${esc(rc.Circuit.circuitName)} - practice classification by fastest lap. <b>Cached snapshot</b> of OpenF1 data${gen?" taken "+esc(gen):""}. Past sessions do not change, but this copy is not live. Sprint weekends have a single practice session.</div>`;
+   for(const s of cs){const rows=s.r.map(x=>`<tr><td>${x.p??"-"}</td><td>${esc(x.d||"#"+x.n)}</td><td>${esc(x.t||"")}</td><td class="n">${x.dns?"DNS":x.dsq?"DSQ":fmtT(x.b)}</td><td class="n">${x.p==1?"":(typeof x.g=="number"?"+"+x.g.toFixed(3):"")}</td><td class="n">${x.l??""}</td></tr>`);
+    h+=`<h3 style="margin:14px 0 4px;font-size:15px">${esc(s.s)} <span class="mute">${new Date(s.ds).toLocaleString([], {weekday:"short",day:"numeric",month:"short",hour:"2-digit",minute:"2-digit"})}</span></h3>`+(rows.length?tbl(["P","Driver","Team","Best lap","Gap","Laps"],rows):"<p class='mute'>No classification published.</p>")}
+   out.innerHTML=h;return}
+  const all=await get(O+"sessions?year="+y+"&session_type=Practice").catch(()=>null);
   if(!all){out.innerHTML=`<div class="big">${esc(rc.raceName)} ${rc.season}</div><div class="warn"><b>Practice data is temporarily unavailable.</b> Practice results come from OpenF1, which blocks all free access (including past sessions) while any F1 session is running. It works again shortly after the session ends. Below are other sources for the same query, labeled by source.</div><div id="pfb"></div>`;runFallback(`${y} ${rc.raceName} practice results`,$("pfb"));return}
   const ss=all.filter(s=>{const d=new Date(s.date_start).getTime();return d<=rd+864e5&&d>=rd-4*864e5}).sort((a,b)=>a.date_start<b.date_start?-1:1);
   let h=`<div class="big">${esc(rc.raceName)} ${rc.season}</div><div class="mute">${esc(rc.Circuit.circuitName)} - practice classification by fastest lap, from OpenF1 (2023 onward only). Sprint weekends have a single practice session.</div>`;
