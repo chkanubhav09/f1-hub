@@ -25,7 +25,7 @@ footer{max-width:1100px;margin:0 auto;padding:10px 16px 30px;color:var(--mute);f
 <nav id="nav"></nav><main id="main"></main>
 <footer>Data: Jolpica F1 API (Ergast-compatible) and OpenF1, plus BBC Sport / Motorsport.com RSS via the free rss2json converter. Loaded live in your browser, nothing stored. Predictions use past results only and can be badly wrong. Circuit/driver links go to Wikipedia.</footer>
 <script>
-const J="https://api.jolpi.ca/ergast/f1/",O="https://api.openf1.org/v1/",YR=new Date().getFullYear();
+const WORKER="",J="https://api.jolpi.ca/ergast/f1/",O="https://api.openf1.org/v1/",YR=new Date().getFullYear();
 const $=id=>document.getElementById(id),esc=s=>String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
 const cache={};const get=async u=>{if(cache[u])return cache[u];const r=await fetch(u);if(!r.ok)throw Error("HTTP "+r.status);return cache[u]=await r.json()};
 const jol=async p=>(await get(J+p)).MRData;const nm=d=>d.givenName+" "+d.familyName;
@@ -38,12 +38,27 @@ $("nav").innerHTML=Object.entries(tabs).map(([k,v])=>`<button data-t="${k}">${v}
 $("nav").onclick=e=>{if(e.target.dataset.t)location.hash=e.target.dataset.t};
 async function route(){const t=(location.hash||"#home").slice(1).split("/")[0];const k=tabs[t]?t:"home";
  document.querySelectorAll("nav button").forEach(b=>{b.classList.toggle("on",b.dataset.t==k);if(b.dataset.t==k)b.scrollIntoView({inline:"center",block:"nearest"})});$("main").innerHTML=card("Loading","Loading...",1);
- try{$("main").innerHTML=await views[k]()}catch(e){$("main").innerHTML=card("Error",err(e),1)}if(after[k])after[k]()}
+ try{$("main").innerHTML=await views[k]()}catch(e){$("main").innerHTML=card("Error",err(e),1)}$("main").insertAdjacentHTML("beforeend",fbCard(k));wireFb();if(after[k])after[k]()}
 addEventListener("hashchange",route);
 
 async function allResults(){const first=await jol("current/results.json?limit=100"),tot=+first.total,m={};const add=d=>d.RaceTable.Races.forEach(r=>{if(m[r.round])m[r.round].Results.push(...r.Results);else m[r.round]=r});add(first);
  for(let o=100;o<tot;o+=100)add(await jol(`current/results.json?limit=100&offset=${o}`));return Object.values(m).sort((a,b)=>a.round-b.round)}
 async function seasonData(){if(cache._sd)return cache._sd;const [R,S]=await Promise.all([allResults(),jol("current.json")]);return cache._sd={R,S:S.RaceTable.Races}}
+
+/* Fallback chain: 1) Wikipedia  2) web search via worker  3) AI answer via worker (words only) */
+const lab=(c,t)=>`<span class="tag" style="background:${c};color:#fff">${t}</span>`;
+async function wiki(q){const r=await get("https://en.wikipedia.org/w/api.php?action=query&list=search&format=json&origin=*&srlimit=5&srsearch="+encodeURIComponent(q));
+ return r.query.search.map(x=>`<li>${lab("#2563eb","Wikipedia")} <a href="https://en.wikipedia.org/?curid=${x.pageid}" target="_blank" rel="noopener">${esc(x.title)}</a><div class="mute">${esc(x.snippet.replace(/<[^>]+>/g,""))}...</div></li>`)}
+async function wpost(path,body){const r=await fetch(WORKER+path,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)});if(!r.ok)throw Error("HTTP "+r.status);return r.json()}
+async function runFallback(q,out){out.innerHTML="Searching...";let h="";
+ try{const w=await wiki(q);h+=card("Wikipedia (source links)",w.length?`<ul>${w.join("")}</ul>`:"No Wikipedia matches.")}catch(e){h+=card("Wikipedia",err(e))}
+ if(WORKER){try{const r=await wpost("/search",{q:q+" Formula 1"});h+=card("Web search results",(r.results||[]).length?`<ul>${r.results.map(x=>`<li>${lab("#0d9488","Web")} <a href="${esc(x.url)}" target="_blank" rel="noopener">${esc(x.title)}</a><div class="mute">${esc((x.content||"").slice(0,220))}...</div></li>`).join("")}</ul>`+`<div class="mute">Via Tavily search. Check the linked pages.</div>`:"No web results.")}catch(e){h+=card("Web search",err(e))}}
+ else h+=card("Web search","<span class='mute'>Not connected yet.</span>");
+ h+=card("AI answer",`<button id="aib">Ask the AI</button><div id="aio" class="mute">Words only, from the model's general knowledge. Not verified data.</div>`);
+ out.innerHTML=h;const b=$("aib");if(b)b.onclick=async()=>{if(!WORKER){$("aio").textContent="AI assistant not connected yet.";return}
+  b.disabled=1;$("aio").textContent="Thinking...";try{const r=await wpost("/ask",{q});$("aio").innerHTML=`<div class="warn"><b>AI answer, not verified data.</b> It may be wrong or out of date and never replaces the tables above.</div><p>${esc(r.answer).replace(/\n/g,"<br>")}</p>`}catch(e){$("aio").innerHTML=err(e)}b.disabled=0}}
+function fbCard(k){return `<section class="card wide"><h2>Can't find it here?</h2><div class="mute">If a tab above is empty or missing data (older practice sessions, rate limits, gaps), search other sources. Results are labeled by source.</div><div><input id="fbq" style="flex:1;min-width:200px" placeholder="e.g. 2019 Monaco GP practice 2 results" value="${esc(tabs[k]||"")} F1"><button id="fbb">Search</button></div><div id="fbo"></div></section>`}
+function wireFb(){const q=$("fbq"),b=$("fbb");if(!b)return;const go=()=>q.value.trim()&&runFallback(q.value.trim(),$("fbo"));b.onclick=go;q.onkeydown=e=>{if(e.key=="Enter")go()}}
 const views={};const after={};let timer;
 views.home=async()=>{const{R,S}=await seasonData();const n=S.find(r=>when(r)>Date.now()),l=R[R.length-1];
  let h=n?card("Next race",`<div class="big">${esc(n.raceName)}</div><div>${esc(n.Circuit.circuitName)}, ${esc(n.Circuit.Location.locality)}, ${esc(n.Circuit.Location.country)}</div><div class="mute">Round ${n.round} - ${when(n).toLocaleString()}</div><div id="cd" class="big" style="color:var(--red)"></div><div class="mute" style="margin-top:6px">${[["FirstPractice","FP1"],["SecondPractice","FP2"],["ThirdPractice","FP3"],["SprintQualifying","Sprint Q"],["Sprint","Sprint"],["Qualifying","Quali"]].filter(x=>n[x[0]]).map(x=>`${x[1]}: ${new Date(n[x[0]].date+"T"+(n[x[0]].time||"12:00:00Z")).toLocaleString([], {weekday:"short",hour:"2-digit",minute:"2-digit"})}`).join(" - ")}</div>`):card("Next race","Season complete.");
@@ -56,7 +71,21 @@ async function news(){const feeds=[["https://feeds.bbci.co.uk/sport/formula1/rss
  const all=rs.flatMap((r,i)=>r.status=="fulfilled"?(r.value.items||[]).map(x=>({...x,src:feeds[i][1]})):[]).sort((a,b)=>new Date(b.pubDate)-new Date(a.pubDate));
  return all.length?`<ul>${all.slice(0,14).map(x=>`<li><a href="${esc(x.link)}" target="_blank" rel="noopener">${esc(x.title)}</a> <span class="mute">${esc(x.src)}</span></li>`).join("")}</ul>`:err(Error("no feed"))}
 
-views.live=async()=>{const [s]=await get(O+"sessions?session_key=latest");const k=s.session_key;
+const WMO={0:"Clear",1:"Mostly clear",2:"Partly cloudy",3:"Overcast",45:"Fog",48:"Fog",51:"Light drizzle",53:"Drizzle",55:"Heavy drizzle",61:"Light rain",63:"Rain",65:"Heavy rain",80:"Showers",81:"Showers",82:"Heavy showers",95:"Thunderstorm",96:"Thunderstorm",99:"Thunderstorm"};
+async function weekendFallback(why){
+ const nx=(await jol("current/next.json")).RaceTable.Races[0],cr=(await jol("current.json")).RaceTable.Races;
+ const now=Date.now(),D=36e5;let wk=cr.find(r=>{const t0=new Date(r.date+"T"+(r.time||"12:00:00Z")).getTime();return now>t0-4*864e5&&now<t0+D*4})||nx;
+ const S=[["FirstPractice","Practice 1"],["SecondPractice","Practice 2"],["ThirdPractice","Practice 3"],["SprintQualifying","Sprint Qualifying"],["Sprint","Sprint"],["Qualifying","Qualifying"]].filter(x=>wk[x[0]]).map(x=>({n:x[1],t:new Date(wk[x[0]].date+"T"+(wk[x[0]].time||"12:00:00Z"))}));
+ S.push({n:"Race",t:when(wk)});S.sort((a,b)=>a.t-b.t);
+ const st=x=>{const d=now-x.t;return d<0?"Upcoming":d<(x.n=="Race"?2:1.1)*D?"Probably live now":"Finished"};
+ let wx="";try{const L=wk.Circuit.Location,w=(await get(`https://api.open-meteo.com/v1/forecast?latitude=${L.lat}&longitude=${L.long}&current=temperature_2m,relative_humidity_2m,precipitation,wind_speed_10m,weather_code&wind_speed_unit=ms`)).current;
+  wx=card("Weather at the circuit (now)",`${WMO[w.weather_code]||"Code "+w.weather_code}, air ${w.temperature_2m}&deg;C, humidity ${w.relative_humidity_2m}%, wind ${w.wind_speed_10m} m/s, rain ${w.precipitation} mm. <div class="mute">Source: Open-Meteo forecast model for the circuit location, not a track sensor reading.</div>`)}catch(e){}
+ let nw="";try{nw=card("Latest headlines",await news())}catch(e){}
+ return card("Live timing is not available right now",`<div class="warn"><b>Why:</b> ${esc(why)} The free live-timing source (OpenF1) blocks all unauthenticated access, including session lists, while any session is running. Paid access is the only way around it, so this app does not show live positions, laps, tyres or race control during sessions. Nothing below is faked.</div><div class="mute">Positions and race control come back automatically after the session ends (usually within minutes to an hour). For live timing, use the official F1 app/F1 TV.</div>`,1)
+ +card(esc(wk.raceName)+" - weekend schedule",tbl(["Session","Starts (your time)","Status"],S.map(x=>`<tr><td>${x.n}</td><td>${x.t.toLocaleString()}</td><td class="n">${st(x)}</td></tr>`))+`<div class="mute">Start times: Jolpica schedule. Status is estimated from start time and typical session length, not from timing data. <a href="${esc(wk.url)}" target="_blank" rel="noopener">Wikipedia</a></div>`)+wx+nw}
+views.live=async()=>{let ss;try{ss=await get(O+"sessions?session_key=latest")}catch(e){const m=String(e.message||e);return weekendFallback(/HTTP 40[13]/.test(m)?"OpenF1 is refusing requests right now (HTTP 401). This is its documented behaviour while a live session is running.":"OpenF1 could not be reached ("+m+").")}
+ if(!Array.isArray(ss)||!ss.length){const m=ss&&ss.detail?ss.detail:"OpenF1 returned no session.";return weekendFallback(m)}
+ const [s]=ss;const k=s.session_key;
  const [pos,drv,st,wx,rc,iv]=await Promise.allSettled([get(O+"position?session_key="+k),get(O+"drivers?session_key="+k),get(O+"stints?session_key="+k),get(O+"weather?session_key="+k),get(O+"race_control?session_key="+k),get(O+"intervals?session_key="+k)]);
  const ok=x=>x.status=="fulfilled"&&Array.isArray(x.value)?x.value:[];const d={};ok(drv).forEach(x=>d[x.driver_number]=x);
  const last={};ok(pos).forEach(p=>last[p.driver_number]=p);const iv2={};ok(iv).forEach(p=>iv2[p.driver_number]=p);
