@@ -71,6 +71,42 @@ async function news(){const feeds=[["https://feeds.bbci.co.uk/sport/formula1/rss
  const all=rs.flatMap((r,i)=>r.status=="fulfilled"?(r.value.items||[]).map(x=>({...x,src:feeds[i][1]})):[]).sort((a,b)=>new Date(b.pubDate)-new Date(a.pubDate));
  return all.length?`<ul>${all.slice(0,14).map(x=>`<li><a href="${esc(x.link)}" target="_blank" rel="noopener">${esc(x.title)}</a> <span class="mute">${esc(x.src)}</span></li>`).join("")}</ul>`:err(Error("no feed"))}
 
+/* ---- Live tab: unofficial F1 live-timing feed via Cloudflare relay; falls back to OpenF1 / schedule ---- */
+const RELAY=WORKER.replace("https://","wss://")+"/ws";let LV=null;
+function merge(t,p){if(p===null||typeof p!=="object"||Array.isArray(p))return p;if(t===null||typeof t!=="object")t=Array.isArray(p)?[]:{};
+ for(const k of Object.keys(p)){if(k==="_kf")continue;t[k]=merge(t[k],p[k])}return t}
+async function inflate(b64){const bin=Uint8Array.from(atob(b64),c=>c.charCodeAt(0));const ds=new DecompressionStream("deflate-raw");const w=ds.writable.getWriter();w.write(bin);w.close();return JSON.parse(await new Response(ds.readable).text())}
+function lvClose(){if(LV){LV.dead=1;try{LV.ws&&LV.ws.close()}catch(e){}clearInterval(LV.tick);LV=null}}
+addEventListener("hashchange",()=>{if(!location.hash.startsWith("#live"))lvClose()});
+views.live=async()=>`<div id="lv">${card("Live / Session","Connecting to the live-timing feed...",1)}</div>`;
+after.live=()=>{lvClose();const S={st:{},pts:[],pos:{},last:0,n:0,err:"",open:0};LV=S;
+ const apply=(k,v)=>{S.st[k]=merge(S.st[k],v);S.last=Date.now();S.n++};
+ const handle=async(k,v)=>{if(typeof v==="string"&&/\.z$/.test(k)){try{v=await inflate(v)}catch(e){return}}
+  if(k==="Position.z"||k==="Position"){(v.Position||[]).forEach(fr=>{const e=fr.Entries||{};Object.keys(e).forEach(n=>{const q=e[n];if(q&&q.X!=null&&q.Y!=null&&(q.X||q.Y)){S.pos[n]=q;if(S.pts.length<2500&&Math.random()<.25)S.pts.push([q.X,q.Y])}})});S.last=Date.now();return}
+  apply(k,v)};
+ const fallback=async why=>{if(S.dead)return;lvClose();$("lv")&&($("lv").innerHTML=card("Live feed unavailable",`<div class="warn">${esc(why)} Showing the fallback below instead.</div>`,1)+await liveOld().catch(e=>card("Live",err(e),1)))};
+ let ws;try{ws=new WebSocket(RELAY)}catch(e){fallback("Could not open the relay.");return}S.ws=ws;
+ ws.onopen=()=>{S.open=1};
+ ws.onerror=()=>{S.err="relay error"};
+ ws.onclose=()=>{if(!S.dead&&S.n<3)fallback("The live relay closed before data arrived ("+(S.err||"closed")+"). It may be over the free-tier limit or the F1 feed is down.")};
+ ws.onmessage=async m=>{for(const p of String(m.data).split("\x1e").filter(Boolean)){let j;try{j=JSON.parse(p)}catch(e){continue}
+  if(j.type===3&&j.result&&typeof j.result==="object")for(const k of Object.keys(j.result))await handle(k,j.result[k]);
+  else if(j.type===1&&j.target==="feed"){await handle(j.arguments[0],j.arguments[1])}}};
+ setTimeout(()=>{if(!S.dead&&!S.st.TimingData)fallback("No timing data arrived from the live feed within 12 seconds (no session running, or the feed is idle).")},12000);
+ S.tick=setInterval(()=>{if(S.dead||!$("lv")||!S.st.TimingData)return;$("lv").innerHTML=renderLive(S)},1000)};
+function renderLive(S){const st=S.st,si=st.SessionInfo||{},dl=st.DriverList||{},lines=(st.TimingData||{}).Lines||{},app=(st.TimingAppData||{}).Lines||{},wx=st.WeatherData||{};
+ const status=(st.SessionStatus||{}).Status||si.SessionStatus||"?",age=Math.round((Date.now()-S.last)/1e3);
+ const col={SOFT:"#e10600",MEDIUM:"#f5c518",HARD:"#eee",INTERMEDIATE:"#3ecf8e",WET:"#3b82f6"};
+ const rows=Object.entries(lines).map(([n,l])=>({n,l,p:+l.Position||99})).sort((a,b)=>a.p-b.p).map(({n,l})=>{const d=dl[n]||{},ap=app[n]||{},stints=Object.entries(ap.Stints||{}).sort((a,b)=>+a[0]-+b[0]),cur=stints.length?stints[stints.length-1][1]:{},
+  v=x=>x&&typeof x==="object"?x.Value:x;
+  return `<tr><td>${esc(l.Position||"")}</td><td><span class="s" style="background:#${esc(d.TeamColour||"888")}"></span>${esc(d.Tla||n)}${l.InPit?' <span class="tag">PIT</span>':""}</td><td>${cur.Compound?`<span class="s" style="background:${col[cur.Compound]||"#777"}"></span>${esc(cur.TotalLaps??"")}`:""}</td><td class="n">${esc(v(l.LastLapTime)||"")}</td><td class="n">${esc(v(l.BestLapTime)||"")}</td><td class="n">${esc(l.GapToLeader||l.TimeDiffToFastest||"")}</td><td class="n">${esc(v(l.IntervalToPositionAhead)||l.TimeDiffToPositionAhead||"")}</td></tr>`}).join("");
+ let rc=(st.RaceControlMessages||{}).Messages||[];rc=(Array.isArray(rc)?rc:Object.values(rc)).slice(-8).reverse();
+ let map="";const pts=S.pts;if(pts.length>80){const xs=pts.map(p=>p[0]),ys=pts.map(p=>p[1]),x0=Math.min(...xs),x1=Math.max(...xs),y0=Math.min(...ys),y1=Math.max(...ys),W=300,H=220,sc=Math.min((W-20)/(x1-x0||1),(H-20)/(y1-y0||1)),X=x=>10+(x-x0)*sc,Y=y=>H-10-(y-y0)*sc;
+  map=card("Track positions",`<svg viewBox="0 0 ${W} ${H}" style="width:100%;max-width:460px;display:block;margin:auto">${pts.map(p=>`<circle cx="${X(p[0]).toFixed(1)}" cy="${Y(p[1]).toFixed(1)}" r="1" fill="#444"/>`).join("")}${Object.entries(S.pos).map(([n,q])=>{const d=dl[n]||{};return `<circle cx="${X(q.X).toFixed(1)}" cy="${Y(q.Y).toFixed(1)}" r="4" fill="#${esc(d.TeamColour||"fff")}"/><text x="${(X(q.X)+6).toFixed(1)}" y="${(Y(q.Y)+3).toFixed(1)}" font-size="8" fill="#ddd">${esc(d.Tla||n)}</text>`}).join("")}</svg><div class="mute">Outline is drawn from the cars' own position samples (approximate, not a surveyed map).</div>`)}
+ return card(esc((si.Meeting&&si.Meeting.Name)||"")+" - "+esc(si.Name||"Session"),`<div class="warn"><b>Unofficial live feed.</b> This is the same public stream the official F1 app uses, relayed through a free Cloudflare worker. It is not an official API, can stop or change without notice, and positions can lag a few seconds. Last update ${age}s ago. Session status: <b>${esc(status)}</b>. Lap: ${esc((st.LapCount||{}).CurrentLap||"-")}/${esc((st.LapCount||{}).TotalLaps||"-")}.</div>`+tbl(["P","Driver","Tyre","Last","Best","Gap","Int"],[rows]),1)
+ +map+(wx.AirTemp?card("Weather (track sensors)",`Air ${esc(wx.AirTemp)}&deg;C, track ${esc(wx.TrackTemp)}&deg;C, humidity ${esc(wx.Humidity)}%, wind ${esc(wx.WindSpeed)} m/s, ${wx.Rainfall==="1"?"RAIN":"dry"}`):"")
+ +card("Race control",rc.length?`<ul>${rc.map(m=>`<li><span class="mute">${esc((m.Utc||"").slice(11,19))}</span> ${esc(m.Message)}</li>`).join("")}</ul>`:"No messages.")}
+
 const WMO={0:"Clear",1:"Mostly clear",2:"Partly cloudy",3:"Overcast",45:"Fog",48:"Fog",51:"Light drizzle",53:"Drizzle",55:"Heavy drizzle",61:"Light rain",63:"Rain",65:"Heavy rain",80:"Showers",81:"Showers",82:"Heavy showers",95:"Thunderstorm",96:"Thunderstorm",99:"Thunderstorm"};
 async function weekendFallback(why){
  const nx=(await jol("current/next.json")).RaceTable.Races[0],cr=(await jol("current.json")).RaceTable.Races;
@@ -83,7 +119,7 @@ async function weekendFallback(why){
  let nw="";try{nw=card("Latest headlines",await news())}catch(e){}
  return card("Live timing is not available right now",`<div class="warn"><b>Why:</b> ${esc(why)} The free live-timing source (OpenF1) restricts all keyless access, including session lists, while a session is running (access with a key is a paid plan, which this free app does not use). So this app does not show live positions, laps, tyres or race control during sessions. Nothing below is faked.</div><div class="mute">Positions and race control come back automatically after the session ends (usually within minutes to an hour). For live timing, use the official F1 app/F1 TV.</div>`,1)
  +card(esc(wk.raceName)+" - weekend schedule",tbl(["Session","Starts (your time)","Status"],S.map(x=>`<tr><td>${x.n}</td><td>${x.t.toLocaleString()}</td><td class="n">${st(x)}</td></tr>`))+`<div class="mute">Start times: Jolpica schedule. Status is estimated from start time and typical session length, not from timing data. <a href="${esc(wk.url)}" target="_blank" rel="noopener">Wikipedia</a></div>`)+wx+nw}
-views.live=async()=>{let ss;try{ss=await get(O+"sessions?session_key=latest")}catch(e){const m=String(e.message||e);return weekendFallback(/HTTP 40[13]|Failed to fetch/.test(m)?"OpenF1 is not answering browser requests right now. Tested from a server at the same time, it returned HTTP 401 with the message \"Live F1 session in progress. Global API access is restricted to authenticated users until the session ends.\"":"OpenF1 could not be reached ("+m+").")}
+const liveOld=async()=>{let ss;try{ss=await get(O+"sessions?session_key=latest")}catch(e){const m=String(e.message||e);return weekendFallback(/HTTP 40[13]|Failed to fetch/.test(m)?"OpenF1 is not answering browser requests right now. Tested from a server at the same time, it returned HTTP 401 with the message \"Live F1 session in progress. Global API access is restricted to authenticated users until the session ends.\"":"OpenF1 could not be reached ("+m+").")}
  if(!Array.isArray(ss)||!ss.length){const m=ss&&ss.detail?ss.detail:"OpenF1 returned no session.";return weekendFallback(m)}
  const [s]=ss;const k=s.session_key;
  const [pos,drv,st,wx,rc,iv]=await Promise.allSettled([get(O+"position?session_key="+k),get(O+"drivers?session_key="+k),get(O+"stints?session_key="+k),get(O+"weather?session_key="+k),get(O+"race_control?session_key="+k),get(O+"intervals?session_key="+k)]);
