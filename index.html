@@ -191,7 +191,7 @@ function score(R,upto,decay=.75){const dp={},tp={},nm2={},dt={};R.slice(0,upto).
 const softmax=(o,T=4)=>{const ids=Object.keys(o),m=Math.max(...ids.map(i=>o[i].s)),e=ids.map(i=>Math.exp((o[i].s-m)/T)),z=e.reduce((a,b)=>a+b,0);ids.forEach((i,k)=>o[i].p=e[k]/z);return ids.sort((a,b)=>o[b].p-o[a].p)};
 views.predict=async()=>{const{R,S}=await seasonData();if(R.length<4)return card("Predictions","Not enough races yet this season.",1);
  const nx=S.find(r=>when(r)>Date.now()-3*36e5);if(!nx)return card("Predictions","No upcoming race in the schedule.",1);
- const y=+nx.season,rd=+nx.round,done=R.find(r=>+r.round==rd);
+ const y=+nx.season,rd=+nx.round,inWk=d=>{const t=new Date(d).getTime(),r0=new Date(nx.date+"T12:00:00Z").getTime();return t<=r0+864e5&&t>=r0-4*864e5};const done=R.find(r=>+r.round==rd);
  const base=score(R.filter(r=>+r.round<rd),R.filter(r=>+r.round<rd).length);
  const strip=t=>(t||"").normalize("NFD").replace(/[\u0300-\u036f]/g,"").toLowerCase().trim();
  const [M,Q,P]=await Promise.all([get("prediction-model.json").catch(()=>null),jol(`${y}/${rd}/qualifying.json`).then(d=>d.RaceTable.Races[0]?.QualifyingResults||[]).catch(()=>[]),(async()=>{
@@ -203,15 +203,18 @@ views.predict=async()=>{const{R,S}=await seasonData();if(R.length<4)return card(
     if(n)src="OpenF1, live"}catch(e){note="Practice data could not be read right now (OpenF1 locks while a session is live), so practice pace is left out."}}
   return{best,n,src,note}})()]);
  const fam={};R.forEach(r=>r.Results.forEach(x=>fam[x.Driver.driverId]=strip(x.Driver.familyName)));
- const gridOf={};Q.forEach(x=>gridOf[x.Driver.driverId]=+x.position);if(Q.length)Q.forEach(x=>fam[x.Driver.driverId]=strip(x.Driver.familyName));
- let ids=Object.keys(base);if(Q.length)ids=ids.filter(i=>gridOf[i]);
- const hasP=P.n>0&&Object.keys(P.best).length>0,hasG=Q.length>0;
+ const gq={};let gsrc="Jolpica";Q.forEach(x=>gq[strip(x.Driver.familyName)]=+x.position);
+ if(!Q.length){try{const all=await get(O+"sessions?year="+y+"&session_name=Qualifying");const qs=all.find(s=>inWk(s.date_start)&&new Date(s.date_end)<Date.now());
+   if(qs){const [rr,dr]=await Promise.all([get(O+"session_result?session_key="+qs.session_key),get(O+"drivers?session_key="+qs.session_key)]);const dm={};dr.forEach(d=>dm[d.driver_number]=d);rr.forEach(x=>{const f=strip((dm[x.driver_number]?.full_name||"").split(" ").pop());if(f&&x.position)gq[f]=+x.position});gsrc="OpenF1, live (Jolpica has not published it yet)"}}catch(e){}}
+ const gridOf={};Object.keys(base).forEach(i=>{if(gq[fam[i]])gridOf[i]=gq[fam[i]]});
+ let ids=Object.keys(base);const hasG=Object.keys(gq).length>0;if(hasG)ids=ids.filter(i=>gridOf[i]);
+ const hasP=P.n>0&&Object.keys(P.best).length>0;
  const gb=hasP?Math.min(...Object.values(P.best)):0;let gaps={},mx=0;if(hasP){ids.forEach(i=>{const b=P.best[fam[i]];if(b){gaps[i]=Math.min(3,(b/gb-1)*100);mx=Math.max(mx,gaps[i])}})}
  const stages=[["form",["form"],"Before the weekend (season form only)"]];if(hasP)stages.push(["form+practice",["form","fp"],"After practice (adds practice pace)"]);if(hasG)stages.push([hasP?"form+practice+grid":"form+grid",hasP?["form","fp","grid"]:["form","grid"],"After qualifying (adds grid position)"]);
  const run=(feats,beta)=>{const z=ids.map(i=>{const f={form:base[i].s/10,fp:(gaps[i]??mx),grid:Math.log(gridOf[i]||ids.length)};return feats.reduce((a,k,j)=>a+beta[j]*f[k],0)});const m=Math.max(...z),e=z.map(v=>Math.exp(v-m)),t=e.reduce((a,b)=>a+b,0);const o={};ids.forEach((i,k)=>o[i]=e[k]/t);return ids.slice().sort((a,b)=>o[b]-o[a]).map(i=>({id:i,p:o[i]}))};
  if(!M)return card("Predictions","Model file could not be loaded.",1);
  const res=stages.map(([k,f,l])=>({k,l,m:M.stages[k],r:run(f,M.stages[k].beta)}));const cur=res[res.length-1],pct=p=>(p*100).toFixed(0)+"%";
- const nmOf=i=>base[i].name,sessionsDone=[hasP?"practice ("+P.n+" session"+(P.n>1?"s":"")+", "+P.src+")":"",hasG?"qualifying":"",done?"race":""].filter(Boolean);
+ const nmOf=i=>base[i].name,sessionsDone=[hasP?"practice ("+P.n+" session"+(P.n>1?"s":"")+", "+P.src+")":"",hasG?"qualifying ("+gsrc+")":"",done?"race":""].filter(Boolean);
  const hit=cur.m.test;
  let h=card(`Winner probabilities - ${esc(nx.raceName)}`,`<div class="mute"><b>Model prediction, not a fact.</b> Current stage: <b>${esc(cur.l)}</b>. Data in so far: season form${sessionsDone.length?", "+esc(sessionsDone.join(", ")):""}. It updates by itself when each session's results appear (qualifying and race results from Jolpica, practice from OpenF1 when readable).${P.note?" <span class='warn'>"+esc(P.note)+"</span>":""}</div>`+tbl(["Driver","","Win chance"],cur.r.slice(0,10).map(x=>`<tr><td>${esc(nmOf(x.id))}${hasG?` <span class="mute">P${gridOf[x.id]}</span>`:""}</td><td style="width:45%"><div class="bar" style="width:${Math.min(100,x.p*150)}%"></div></td><td class="n">${pct(x.p)}</td></tr>`)),1);
  h+=card("Predicted podium",`<ol>${cur.r.slice(0,3).map(x=>`<li>${esc(nmOf(x.id))} (${pct(x.p)} to win)</li>`).join("")}</ol>`);
