@@ -30,11 +30,12 @@ header{position:relative}
 
 @keyframes loopT{0%{transform:translateX(-150px)}50%,100%{transform:translateX(100vw)}}@keyframes loopB{0%,50%{transform:translateX(100vw)}100%{transform:translateX(-150px)}}.wh{transform-box:fill-box;transform-origin:center;animation:spin .5s linear infinite}
 @keyframes spin{to{transform:rotate(360deg)}}
-#prog{position:fixed;left:0;top:0;height:3px;width:100%;z-index:20;pointer-events:none}
-#prog i{position:absolute;top:0;left:0;height:3px;width:var(--p,0%);background:var(--red)}
-#prog .car{position:absolute;top:1px;left:calc(var(--p,0%) * var(--f,1));width:44px;height:auto;transform:translateX(-100%)}
-@media(max-width:600px){.f1logo{height:24px}.lane{height:36px}.lane .car{width:92px}#prog .car{width:34px}}
-@media(prefers-reduced-motion:reduce){.lane .car,.wh{animation:none}.lane .car{left:calc(50% - 60px)}.lane .car:nth-child(2){left:calc(50% + 80px)}.lane .car:nth-child(n+3){display:none}#prog .car{display:none}}
+#prog{position:fixed;left:0;top:0;height:46px;width:100%;z-index:20;pointer-events:none;background:#0a0a0dee;border-bottom:1px solid var(--line)}body{padding-top:46px}
+#prog b{position:absolute;top:3px;left:8px;font:700 11px system-ui;letter-spacing:.06em;color:#fff}#prog b em{color:var(--red);font-style:normal}
+#prog i{position:absolute;bottom:0;left:0;height:3px;width:var(--p,0%);background:var(--red)}
+#prog .car{position:absolute;bottom:4px;left:var(--p,0%);width:120px;height:auto;transform:translateX(-100%)}
+@media(max-width:600px){.f1logo{height:24px}.lane{height:36px}.lane .car{width:92px}#prog .car{width:96px}}
+@media(prefers-reduced-motion:reduce){.lane .car,.wh{animation:none}.lane .car{left:calc(50% - 60px)}.lane .car:nth-child(2){left:calc(50% + 80px)}.lane .car:nth-child(n+3){display:none}}
 
 </style></head><body>
 <div id="prog" aria-hidden="true"><i></i></div>
@@ -50,7 +51,7 @@ header{position:relative}
 (function(){var p=document.getElementById("prog");function u(){var h=document.documentElement.scrollHeight-innerHeight;p.style.setProperty("--p",(h>0?scrollY/h*100:0)+"%")}addEventListener("scroll",u,{passive:true});addEventListener("resize",u);u()})();
 const WORKER="https://f1-hub-proxy.chkanubhav09.workers.dev",AIURL="https://the-mentalist-proxy.chkanubhav09.workers.dev/",AISYS="You are a Formula 1 assistant inside an unofficial fan app. Answer in plain words only. Do NOT output tables, lap times, gaps, points or result lists, and never invent numbers, positions or statistics. If asked for such data, say it should be checked in the app data tabs or official sources. Keep answers under 150 words and say when you are unsure.",J="https://api.jolpi.ca/ergast/f1/",O="https://api.openf1.org/v1/",YR=new Date().getFullYear();
 const $=id=>document.getElementById(id),esc=s=>String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
-const cache={};const get=async u=>{if(cache[u])return cache[u];const r=await fetch(u);if(!r.ok)throw Error("HTTP "+r.status);return cache[u]=await r.json()};
+const cache={};const get=async u=>{if(cache[u]&&(u.indexOf("http")!==0||Date.now()-cache[u+"_t"]<18e5))return cache[u];cache[u+"_t"]=Date.now();const r=await fetch(u);if(!r.ok)throw Error("HTTP "+r.status);return cache[u]=await r.json()};
 const jol=async p=>(await get(J+p)).MRData;const nm=d=>d.givenName+" "+d.familyName;
 const card=(t,h,w)=>`<section class="card${w?" wide":""}"><h2>${t}</h2>${h}</section>`;
 const err=e=>{const m=String(e.message||e),c=+(m.match(/HTTP (\d+)/)||[])[1];return `<span class="mute">${c==429||c>=500||/Failed to fetch|NetworkError/.test(m)?"Could not load ("+esc(m)+"). The free API is busy or unreachable; try again shortly.":"Request failed ("+esc(m)+"). That looks like a bug, not a rate limit."}</span>`};
@@ -282,7 +283,14 @@ views.history=async()=>{const t=await get("timeline.json");const rows=[...t].rev
  const top=o=>Object.entries(o).sort((a,b)=>b[1]-a[1]||a[0].localeCompare(b[0])).slice(0,8).map(([n,c])=>`<tr><td>${esc(n)}</td><td class="n">${c}</td></tr>`).join("");
  return card("Champions by year, 1950-"+t[t.length-1].year,`<div class="mute">Final-standings leader each season from the Jolpica API. Constructors' championship started in 1958. Points systems changed over time, so points are not comparable across eras.</div>`+tbl(["Year","Drivers' champion","Pts","Constructors' champion","Pts"],rows.map(r=>`<tr><td>${r.year}</td><td>${esc(r.driver)}<span class="tag">${esc(r.driverTeam)}</span></td><td class="n">${r.driverPoints}</td><td>${r.constructor?esc(r.constructor):'<span class="mute">n/a</span>'}</td><td class="n">${r.constructorPoints??""}</td></tr>`)),1)
  +card("Most drivers' titles",`<table>${top(dt)}</table>`)+card("Most constructors' titles",`<table>${top(ct)}</table>`)};
-views.records=async()=>{const R=await get("records.json");
+views.records=async()=>{const R=JSON.parse(JSON.stringify(await get("records.json")));
+ try{const base=new Date(R.asOf+" UTC"),d=await jol("current/results.json?limit=1000"),by=(arr,id)=>arr.find(x=>x.id===id);let n=0,last=null;
+  for(const rc of d.RaceTable.Races){const dt=new Date(rc.date+"T23:59:59Z");if(!(dt>base)||dt>new Date())continue;n++;last=rc.date;
+   const seen={};for(const r of rc.Results){const p=+r.position,dr=by(R.drivers,r.Driver.driverId),co=by(R.constructors,r.Constructor.constructorId);
+    if(dr){dr.races++;if(p===1)dr.wins++;if(p<=3&&dr.podiums!=null)dr.podiums++}
+    if(co){if(!seen[co.id]){seen[co.id]=1;co.races++}if(p===1)co.wins++;if(p<=3&&co.podiums!=null)co.podiums++}}}
+  if(n)R.asOf=last+" (live, +"+n+" race"+(n>1?"s":"")+")"}catch(e){}
+
  const cat=(title,key,arr)=>card(title,tbl(["#","Name","Total"],[...arr].filter(x=>x[key]!=null).sort((a,b)=>b[key]-a[key]).slice(0,10).map((x,i)=>`<tr><td>${i+1}</td><td>${esc(x.name)}</td><td class="n">${x[key]}</td></tr>`)));
  return card("All-time records",`<div class="mute">Counted from the Jolpica API on ${esc(R.asOf)} (${esc(R.scope)}). Pole positions and fastest laps are left out because the API's qualifying and fastest-lap data is incomplete before the 2000s. Counts can differ slightly from the official FIA numbers, for example around sprint races and shared drives, and only about 40 notable drivers and 16 teams were checked, so a name missing from a list is not proof it does not belong there. Alfa Romeo here means the 1950s team only.</div>`,1)
  +cat("Most race wins","wins",R.drivers)+cat("Most podiums","podiums",R.drivers)+cat("Most drivers' titles","titles",R.drivers)+cat("Most race starts","races",R.drivers)
@@ -296,10 +304,12 @@ route();
 var MAP={red_bull:"redbull",mclaren:"mclaren",ferrari:"ferrari",mercedes:"merc",williams:"williams",aston_martin:"aston",alpine:"alpine",haas:"haas",rb:"racingbulls",audi:"audi",cadillac:"cadillac",sauber:"audi",alphatauri:"racingbulls"};
 var prog=document.getElementById("prog");
 var NAMES={redbull:"Red Bull",mclaren:"McLaren",ferrari:"Ferrari",merc:"Mercedes",williams:"Williams",aston:"Aston Martin",alpine:"Alpine",haas:"Haas",racingbulls:"Racing Bulls",audi:"Audi",cadillac:"Cadillac"};
-var PTS={};
+var PTS={},ORDER=ORD,cur=-1;
+function step(force){var h=document.documentElement.scrollHeight-innerHeight,p=h>0?scrollY/h*100:0,i=Math.min(ORDER.length-1,Math.floor(p/(100/ORDER.length)));if(i===cur&&!force)return;cur=i;var lb=prog.querySelector("b");if(lb)lb.innerHTML="<em>P"+(i+1)+"</em> "+(NAMES[ORDER[i]]||ORDER[i]).toUpperCase();var im=prog.querySelector(".car");if(im){im.src=CARS[ORDER[i]];im.title="P"+(i+1)}}
+addEventListener("scroll",function(){step()},{passive:true});addEventListener("resize",function(){step()});
 function paint(order){
  prog.querySelectorAll(".car").forEach(function(c){c.remove()});
- var im=document.createElement("img");im.className="car";im.alt="";im.width=380;im.height=80;im.src=CARS[order[0]];prog.appendChild(im);
+ ORDER=order;var im=document.createElement("img");im.className="car";im.alt="";im.width=380;im.height=80;prog.appendChild(im);if(!prog.querySelector("b"))prog.insertAdjacentHTML("afterbegin","<b></b>");step(true);
  var h="";order.forEach(function(k,i){h+='<div class="it"><b>P'+(i+1)+'</b><img alt="" src="'+CARS[k]+'"><strong>'+NAMES[k]+'</strong>'+(PTS[k]!=null?'<span>'+PTS[k]+' pts</span>':'')+'</div>'});
  var t=document.querySelector("#rank .rt");t.innerHTML=h+h;t.style.setProperty("--d",(order.length*7)+"s");
  ["lane","lane rev"].forEach(function(cl){var l=document.querySelector('.lane'+(cl==="lane"?':not(.rev)':'.rev'));var sfx=cl==="lane"?"":"L";var by={};[].slice.call(l.children).forEach(function(c){by[c.dataset.c]=c});order.forEach(function(k){if(by[k+sfx])l.appendChild(by[k+sfx])})});
