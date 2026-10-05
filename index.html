@@ -294,7 +294,7 @@ views.records=async()=>{const R=JSON.parse(JSON.stringify(await get("records.jso
  const cat=(title,key,arr)=>card(title,tbl(["#","Name","Total"],[...arr].filter(x=>x[key]!=null).sort((a,b)=>b[key]-a[key]).slice(0,10).map((x,i)=>`<tr><td>${i+1}</td><td>${esc(x.name)}</td><td class="n">${x[key]}</td></tr>`)));
  return card("All-time records",`<div class="mute">Counted from the Jolpica API on ${esc(R.asOf)} (${esc(R.scope)}). Pole positions and fastest laps are left out because the API's qualifying and fastest-lap data is incomplete before the 2000s. Counts can differ slightly from the official FIA numbers, for example around sprint races and shared drives, and only about 40 notable drivers and 16 teams were checked, so a name missing from a list is not proof it does not belong there. Alfa Romeo here means the 1950s team only.</div>`,1)
  +cat("Most race wins","wins",R.drivers)+cat("Most podiums","podiums",R.drivers)+cat("Most drivers' titles","titles",R.drivers)+cat("Most race starts","races",R.drivers)
- +cat("Constructors: most wins","wins",R.constructors)};
+ +cat("Constructors: most wins","wins",R.constructors)+cat("Constructors: most titles (1958-2025, Lotus counts all its eras)","titles",R.constructors)};
 views.story=async()=>{const S=await get("story.json");
  return card("The story of F1",`<div class="mute">${esc(S.label)}</div>`,1)+S.eras.map(e=>card(esc(e.years)+": "+esc(e.title),`<p>${esc(e.text)}</p>`,1)).join("")+card("Legendary moments",`<ul>${S.moments.map(m=>`<li><b>${m.year}: ${esc(m.title)}.</b> ${esc(m.text)}</li>`).join("")}</ul>`,1)};
 
