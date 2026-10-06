@@ -1,5 +1,5 @@
 (()=>{
-  let ctx=null, interacted=false,lastScrollSound=0,scrollTimer=0;
+  let ctx=null, interacted=false,lastScrollSound=0;
   const muted=()=>{try{return localStorage.getItem('f1hub_mute')==='1'}catch(_){return false}};
   function tone(kind='click'){
     if(!interacted||muted())return;
@@ -25,7 +25,6 @@
   function scrolling(){
     interacted=true;const now=performance.now();
     if(now-lastScrollSound>420){lastScrollSound=now;tone('scroll')}
-    clearTimeout(scrollTimer);scrollTimer=setTimeout(()=>{},160);
   }
   window.addEventListener('scroll',scrolling,{passive:true});
   window.addEventListener('wheel',()=>{interacted=true},{passive:true});
